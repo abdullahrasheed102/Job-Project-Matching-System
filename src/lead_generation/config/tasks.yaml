@@ -1,0 +1,188 @@
+Description_Classifier_task:
+  description: >
+    Analyze the provided description {topic} and classify into one of the following categories:
+    - "job" → if the description refers to a role, responsibilities, hiring details, or career opportunity.
+    - "project" → If the description focuses solely on getting a deliverable, software system, or technical outcome with no emphasis on hiring.
+    - "project-based-job" → If the description involves hiring someone to complete a specific, short-term or scoped project (e.g. “Looking to hire a web developer for my portfolio site”).
+    - "job-based-project" → If the description is mostly about delivering a solution but also references continued collaboration, team integration, or evaluates candidates like a job (e.g. “You must show skills before working on our team”).
+
+    Consider the poster's intent, tone, and language structure. Focus on whether they are offering a job, requesting a solution, or blending both.
+
+     
+    
+    Only return: "Job" , "Project" , "Job-based-project" or "project-based-job".
+
+
+
+  expected_output: >
+    Return only one word:
+    - "job" → if the description refers to a role, responsibilities, hiring details, or career opportunity.
+    - "project" → If the description focuses solely on getting a deliverable, software system, or technical outcome with no emphasis on hiring.
+    - "project-based-job" → If the description involves hiring someone to complete a specific, short-term or scoped project (e.g. “Looking to hire a web developer for my portfolio site”).
+    - "job-based-project" → If the description is mostly about delivering a solution but also references continued collaboration, team integration, or evaluates candidates like a job (e.g. “You must show skills before working on our team”).
+
+  
+  agent: Description_Classifier
+
+PD_Analyzer_task:
+  description: >
+    Take the raw input {topic}, an informal software idea provided by a non-technical client, and refine it into a structured technical breakdown.
+    Only extract and return the categories selected in {checkpoints}.
+    Carefully analyze the text and generate a 4-5 line summary for each requested section.
+    Important:It should be precise .
+  expected_output: >
+    A JSON object containing only the selected categories from {checkpoints} as keys.
+    Each key should map to a string of 4-5 lines describing that aspect based on the input {topic}.
+    Use simple, clear language suitable for a technical handoff.
+    Do not include any section not explicitly listed in {checkpoints}, even if it's present in the input.
+    Skip any section from checkpoints if there's no relevant or implied information in the topic.
+    Format the final output as a valid JSON object.
+
+  agent: PD_Analyzer
+  output_variable: refined_job_description
+
+Extract_Required_Skills:
+  description: >
+    Analyze the refined_job_description to Extract all necessary tools, technologies, frameworks, and services required to build the described system.
+    For each identified tools, technologies, frameworks, and services use an integrated search tool to find the most effective and up-to-date solutions based on current industry standards.
+    Then, compare the required technologies with the  {developer_skills}. For each requirement, select the best-fit skill from the developer skill set. If no close match exists, include only the most essential and current technology based on the search results.
+    Return a flat list of unique, best-fit technologies—no duplicates, no alternatives, no explanations.
+  expected_output: >
+     A flat list of the most relevant technologies, organized by category:
+     - frontend:[]
+     - backend:[]
+     - api:[]
+     - database:[]
+     - devops:[]
+     - auth:[]
+     - ai:[](frameworks and tools)
+     - other:[]
+
+  agent: Skill_Extractor
+  input_variable: refined_job_description
+  output_variable: Required_skills
+
+Estimate_time_task:
+  description: >
+    Using the refined job description and list of required skills, return a practical estimate of developer hours needed to complete the project.
+    Break the work into high-level categories like frontend, backend, integrations, infra/devops, auth, testing.
+    Estimate assuming a team of 1 experienced developers using modern tools and typical agile velocity.
+    -Keep total hours between 150-500 unless scope is clearly massive.
+    -Add an additional 20% to the total estimated time to account for delays due to human effort, such as communication overhead, coordination gaps, context switching, debugging, and unexpected blockers. Return the updated total time after adjustment.
+    Based on a work schedule of 5 days per week and 6 working hours per day, convert the total estimated development hours into the number of weeks required to complete the project. 
+  expected_output: >
+    Return a breakdown like:
+    - Workstream: <name> — <hours>
+    - Total estimated hours: <total>
+    - Total estimated Weeks: <Weeks>
+    No explanation needed.
+  agent: Time_Estimator
+  input: 
+    - refined_job_description
+    - required_skills
+  output_variable: Estimated_time
+
+Project_Timeline_Planner_task:
+  description: >
+    {PD_Analyzer.output}
+    {Skill_Extractor.output}
+    {Time_Estimator.output}
+    Analyze the refined job description, required tools, and estimated hours.
+    Divide the project into weekly deliverables based on a 30-hour workweek (5 days * 6 hours).
+    Use your understanding of software project phases (setup, UI, API, integrations, testing, deployment) to create a coherent timeline.
+    Generate a list of questions to clarify any uncertainties about the project 
+
+
+  expected_output: >
+   return a JSON object with the following structure:
+    {PD_Analyzer_task.output}
+    {Extract_Required_Skills.output}
+    {Estimate_time_task.output}
+    A clear, numbered week-by-week task breakdown in this format:
+    Total weeks to perform the task.
+    - Week 1: [Tasks related to setup, planning, repo, initial UI or backend setup]
+    - Week 2: [Tasks focused on authentication, data models, APIs, etc.]
+    ...
+    Continue until total hours are distributed. Do not exceed 30 hours per week.
+    -"questions": ["..."]
+
+  agent: Project_Timeline_Planner
+  input: >
+   - refined_job_description
+   - required_skills
+
+
+
+JD_Check_point_task:
+  description: >
+    Take the raw input {topic}, an informal job post or idea by a client.
+    Refine it into a structured description using only the following selected categories: {checkpoints}.
+
+    Use the selected checkpoints (like "Job Title", "Required Skills", etc.) and write 4–5 lines for each.
+    Only include a category if it's listed in {checkpoints} and is either directly present or implied in the input.
+    Avoid making up features or categories not relevant.
+
+    Return your response as clean JSON, using the checkpoint names as keys and 4–5 line strings as values.
+
+    Important: Only include keys that were selected by the user.
+  expected_output: >
+    A well-formatted JSON with selected keys and their refined content.
+  agent: JD_Check_point
+
+
+JD_Analyzer_task:
+  description: >
+     You will be given a raw, unstructured job description {topic}. 
+        Your goal is to rewrite it into a well-structured and polished format.
+
+        Structure your output like this:
+        - Job Title
+        - About the Company (2–3 sentences) (Optional, if present in raw input)
+        - Role Summary (2–3 sentences)
+        - Key Responsibilities (Optional, if present in raw input)
+        - Required Skills(Optional, if present in raw input)
+          - Use bullet points for each skill or technology
+          - Avoid vague terms like "experience with" — be specific about required tools
+        - Preferred Qualifications (Optional, if present in raw input)
+
+        Avoid inventing details — base the rewrite strictly on what’s provided. Use professional tone.
+  expected_output: >
+    A clean, well-structured JSON object containing only the present categories in raw input as keys.
+    Each key should map to a string of 4-5 lines describing that aspect of the project.
+  agent: JD_Analyzer
+
+
+
+EvaluateDeveloperCapabilityTask:
+  description: >
+    You are given:
+      a structured job description {JD_Analyzer_task.output},
+      and a developer's provided skill set {developer_skills}.
+
+    Your task is to:
+    Extract tool technologies, frameworks, and services from the structured job description. 
+    Compare the developer's skill set with the required skills.
+    analyze the developer_skills and required skills to determine if the developer is capable of fulfilling the job requirements.
+     - if capable, add into matched skills
+     - if not capable, add into missing skills
+    Generate a list of matched skills and missing skills.
+
+    Match required skills from the job description against the expanded developer skill set.
+    evaluate "verdict": "Able to do this" if matched_skills skills are 70% of the required_skills
+    otherwise "Not able to do this"
+    Generate a list of questions to clarify any uncertainties about the Job.
+    output should only include:
+    -{JD_Check_point_task.output}
+    -"matched_skills": ["..."],
+    -"missing_skills": ["..."],
+    -"verdict": "Able to do this" or "Not able to do this"
+    -"questions": ["..."]
+
+  expected_output: >
+    A JSON object with the following structure:
+    {JD_Check_point_task.output}
+    "matched_skills": ["..."],
+    "missing_skills": ["..."],
+    "verdict": "Able to do this" or "Not able to do this"
+    -"questions": ["..."]
+  agent: CapabilityEvaluator
